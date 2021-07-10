@@ -1,0 +1,15 @@
+9bCvDN:
+  sampleName: fortigate_traffic.log
+  created: 1621301752532
+  size: 14328
+  numEvents: 19
+wtH2R0:
+  sampleName: fortigate_utm.log
+  created: 1621302375625
+  size: 4014
+  numEvents: 5
+7t7tkH:
+  sampleName: fortigate_eventtype.log
+  created: 1621302546071
+  size: 2590
+  numEvents: 6

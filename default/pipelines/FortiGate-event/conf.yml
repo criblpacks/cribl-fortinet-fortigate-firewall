@@ -1,0 +1,260 @@
+output: default
+groups:
+  nBKZYu:
+    name: Initial Functions for all FortiGate Events
+    description: Set index, remove syslog header, set auto timestamp, Extract Sourcetype
+    index: 2
+    disabled: false
+  rMNvDp:
+    name: Generic Events
+    index: 3
+    description: System and Administrative events
+    disabled: false
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline Parse Fortinet FortiGate Firewall events
+
+        Author:       Raanan Dagan - rdagan@cribl.io
+
+        Date:         2021-05-15
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "FortiGate Log types details can be found here:
+        https://docs.fortinet.com/document/fortigate/7.0.0/fortios-log-message-\
+        reference/160372/list-of-log-types-and-subtypes "
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: index
+          value: index || 'fortigate_logs'
+    description: Set index, if not already set
+    groupId: nBKZYu
+  - id: auto_timestamp
+    filter: "true"
+    disabled: false
+    conf:
+      srcField: _raw
+      dstField: _time
+      defaultTimezone: local
+      timeExpression: time.getTime() / 1000
+      offset: 0
+      maxLen: 32
+      defaultTime: now
+      latestDateAllowed: +1week
+      earliestDateAllowed: -420weeks
+      timestamps:
+        - regex: /^(?:[^,]*,){6}([^,]+)/
+          strptime: "%Y/%m/%d %H:%M:%S"
+    description: Set _time to the generated_time field. Adjust your default timezone as
+      required.
+    groupId: nBKZYu
+  - id: serde
+    filter: "true"
+    disabled: false
+    conf:
+      mode: extract
+      type: kvp
+      srcField: _raw
+      cleanFields: false
+      remove: []
+    description: "Pull out all Key=Values "
+    groupId: nBKZYu
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: Extract Sourcetypes from the type field
+    groupId: nBKZYu
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: sourcetype
+          value: "'fgt_'.concat(type)"
+      remove:
+        - type*
+    description: Change type to sourcetype
+    groupId: nBKZYu
+  - id: drop
+    filter: "!sourcetype.match('fgt_utm') && !sourcetype.match('fgt_traffic') &&
+      !sourcetype.match('fgt_dns')"
+    disabled: true
+    conf: {}
+    description: "Example, Remove any Sourcetype  that are not needed.  In this Drop event
+      I show how to remove any sourcetype that is NOT traffic, dns, or utm "
+    groupId: nBKZYu
+    final: true
+  - id: numerify
+    filter: "true"
+    disabled: false
+    conf:
+      format: none
+      ignoreFields:
+        - "*id*"
+        - dstport
+        - proto
+        - srcport
+      digits: .nan
+    groupId: nBKZYu
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |-
+        Enrich fgt_event - 
+        we Can Enrich vendor status, action, and subtype
+    groupId: rMNvDp
+  - id: eval
+    filter: sourcetype.match('fgt_event')
+    disabled: true
+    conf:
+      add:
+        - name: app
+          value: authproto
+        - name: user_category
+          value: group
+        - name: command
+          value: msg
+        - name: object
+          value: cfgobj
+        - name: object_attrs
+          value: cfgattr
+        - name: object_id
+          value: cfgtid
+        - name: object_path
+          value: cfgpath
+        - name: dvc
+          value: devname
+        - name: vendor_eventtype
+          value: eventtype
+        - name: vendor_url
+          value: url
+        - name: cpu_load_percent
+          value: cpu
+        - name: dest
+          value: devname
+        - name: src_user
+          value: user
+        - name: src_interface
+          value: vap
+        - name: src_mac
+          value: stamac
+        - name: wifi
+          value: radioband
+        - name: vendor_action
+          value: action
+        - name: vendor_status
+          value: status
+    groupId: rMNvDp
+  - id: eval
+    filter: sourcetype.match('fgt_event')
+    disabled: true
+    conf:
+      add:
+        - name: dest
+          value: (dstip || locip || ssid || "unknown")
+        - name: devname
+          value: (devname || devid || "unknown")
+        - name: object_category
+          value: '"object"'
+        - name: product
+          value: '"Firewall"'
+        - name: product_version
+          value: (logver || "50")
+        - name: src
+          value: (srcip || remip || ui || "unknown")
+        - name: tunnelname
+          value: (vpntunnel || tunnelid)
+        - name: user
+          value: (user || xauthuser || "unknown")
+        - name: vendor
+          value: '"Fortinet"'
+        - name: vendor_status
+          value: (vendor_status || "unknown")
+    groupId: rMNvDp
+  - id: lookup
+    filter: sourcetype.match('fgt_event')
+    disabled: true
+    conf:
+      matchMode: exact
+      reloadPeriodSec: 60
+      addToEvent: false
+      inFields:
+        - eventField: subtype
+          lookupField: subtype
+        - eventField: vendor_action
+          lookupField: vendor_action
+        - eventField: vendor_status
+          lookupField: vendor_status
+      ignoreCase: false
+      matchType: first
+      file: ftnt_event_action_info.csv
+      outFields:
+        - eventField: action
+          lookupField: action
+        - eventField: change_type
+          lookupField: change_type
+    groupId: rMNvDp
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: >-
+        Sample fgt_event - 
+
+        we Can sample events when action and status has the same value. For example, when action="login" status="success" pick 1 out of 3
+    groupId: rMNvDp
+  - id: sampling
+    filter: sourcetype.match('fgt_event')
+    disabled: null
+    conf:
+      rules:
+        - filter: "`${action}:${status}`"
+          rate: 3
+    groupId: rMNvDp
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Serialize and convert to JSON
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_*"
+        - "!cribl_breaker"
+        - "!index"
+        - "!host"
+        - "!source"
+        - "!sourcetype"
+        - "*"
+    description: Convert to JSON, and push the fields back into _raw
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      remove:
+        - cribl*
+        - "*"
+      keep:
+        - _*
+        - index
+        - host
+        - source
+        - sourcetype
+    description: cleanup

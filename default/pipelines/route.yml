@@ -1,0 +1,57 @@
+id: default
+groups: {}
+routes:
+  - id: I6k24O
+    name: Fortigate_traffic
+    final: true
+    disabled: false
+    pipeline: FortiGate-traffic
+    description: ""
+    clones: []
+    filter: _raw.match('type="traffic"')
+    output: default
+  - id: 1eA1Tu
+    name: Fortigate_utm
+    final: true
+    disabled: false
+    pipeline: FortiGate-utm
+    description: ""
+    clones: []
+    filter: _raw.match('type="utm"')
+    output: default
+  - id: 9u5Bta
+    name: Fortigate_event
+    final: true
+    disabled: false
+    pipeline: FortiGate-event
+    description: ""
+    clones: []
+    filter: _raw.match('type="event"')
+    output: default
+  - id: KTadlJ
+    name: Fortigate_dns
+    final: true
+    disabled: false
+    pipeline: FortiGate-dns
+    description: ""
+    clones: []
+    filter: _raw.match('type="dns"')
+    output: default
+  - id: VkQBPa
+    name: Fortigate_anomaly
+    final: true
+    disabled: false
+    pipeline: FortiGate-anomaly
+    description: ""
+    clones: []
+    filter: _raw.match('type="anomaly"')
+    output: default
+  - id: default
+    name: default
+    final: true
+    disabled: false
+    pipeline: devnull
+    description: ""
+    clones: []
+    filter: "true"
+    output: default

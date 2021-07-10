@@ -1,0 +1,155 @@
+output: default
+groups:
+  nBKZYu:
+    name: Initial Functions for all FortiGate Events
+    description: Set index, remove syslog header, set auto timestamp, Extract Sourcetype
+    index: 2
+    disabled: false
+  abcHGW:
+    name: DNS Events
+    index: 3
+    description: Domain name server events
+    disabled: true
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline Parse Fortinet FortiGate Firewall events
+
+        Author:       Raanan Dagan - rdagan@cribl.io
+
+        Date:         2021-05-15
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "FortiGate Log types details can be found here:
+        https://docs.fortinet.com/document/fortigate/7.0.0/fortios-log-message-\
+        reference/160372/list-of-log-types-and-subtypes "
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: index
+          value: index || 'fortigate_logs'
+    description: Set index, if not already set
+    groupId: nBKZYu
+  - id: auto_timestamp
+    filter: "true"
+    disabled: false
+    conf:
+      srcField: _raw
+      dstField: _time
+      defaultTimezone: local
+      timeExpression: time.getTime() / 1000
+      offset: 0
+      maxLen: 32
+      defaultTime: now
+      latestDateAllowed: +1week
+      earliestDateAllowed: -420weeks
+      timestamps:
+        - regex: /^(?:[^,]*,){6}([^,]+)/
+          strptime: "%Y/%m/%d %H:%M:%S"
+    description: Set _time to the generated_time field. Adjust your default timezone as
+      required.
+    groupId: nBKZYu
+  - id: serde
+    filter: "true"
+    disabled: false
+    conf:
+      mode: extract
+      type: kvp
+      srcField: _raw
+      cleanFields: false
+      remove: []
+    description: "Pull out all Key=Values "
+    groupId: nBKZYu
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: Extract Sourcetypes from the type field
+    groupId: nBKZYu
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: sourcetype
+          value: "'fgt_'.concat(type)"
+      remove:
+        - type*
+    description: Change type to sourcetype
+    groupId: nBKZYu
+  - id: drop
+    filter: "!sourcetype.match('fgt_utm') && !sourcetype.match('fgt_traffic') &&
+      !sourcetype.match('fgt_dns')"
+    disabled: true
+    conf: {}
+    description: "Example, Remove any Sourcetype  that are not needed.  In this Drop event
+      I show how to remove any sourcetype that is NOT traffic, dns, or utm "
+    groupId: nBKZYu
+    final: true
+  - id: numerify
+    filter: "true"
+    disabled: false
+    conf:
+      format: none
+      ignoreFields:
+        - "*id*"
+        - dstport
+        - proto
+        - srcport
+      digits: .nan
+    groupId: nBKZYu
+  - id: comment
+    filter: "true"
+    disabled: true
+    conf:
+      comment: Drop all fgt_dns other than subtype=”dns-query” events
+    groupId: abcHGW
+  - id: drop
+    filter: sourcetype.match('fgt_dns') && !subtype.match('dns-query')
+    disabled: true
+    conf: {}
+    groupId: abcHGW
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Serialize and convert to JSON
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_*"
+        - "!cribl_breaker"
+        - "!index"
+        - "!host"
+        - "!source"
+        - "!sourcetype"
+        - "*"
+    description: Convert to JSON, and push the fields back into _raw
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      remove:
+        - cribl*
+        - "*"
+      keep:
+        - _*
+        - index
+        - host
+        - source
+        - sourcetype
+    description: cleanup

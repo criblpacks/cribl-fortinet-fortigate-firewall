@@ -1,0 +1,307 @@
+output: default
+groups:
+  nBKZYu:
+    name: Initial Functions for all FortiGate Events
+    description: Set index, remove syslog header, set auto timestamp, Extract Sourcetype
+    index: 2
+    disabled: false
+  xhStW0:
+    name: Traffic Events
+    disabled: false
+    index: 3
+    description: Traffic flow information
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline Parse Fortinet FortiGate Firewall events
+
+        Author:       Raanan Dagan - rdagan@cribl.io
+
+        Date:         2021-05-15
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "FortiGate Log types details can be found here:
+        https://docs.fortinet.com/document/fortigate/7.0.0/fortios-log-message-\
+        reference/160372/list-of-log-types-and-subtypes "
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: index
+          value: index || 'fortigate_logs'
+    description: Set index, if not already set
+    groupId: nBKZYu
+  - id: auto_timestamp
+    filter: "true"
+    disabled: false
+    conf:
+      srcField: _raw
+      dstField: _time
+      defaultTimezone: local
+      timeExpression: time.getTime() / 1000
+      offset: 0
+      maxLen: 32
+      defaultTime: now
+      latestDateAllowed: +1week
+      earliestDateAllowed: -420weeks
+      timestamps:
+        - regex: /^(?:[^,]*,){6}([^,]+)/
+          strptime: "%Y/%m/%d %H:%M:%S"
+    description: Set _time to the generated_time field. Adjust your default timezone as
+      required.
+    groupId: nBKZYu
+  - id: serde
+    filter: "true"
+    disabled: false
+    conf:
+      mode: extract
+      type: kvp
+      srcField: _raw
+      cleanFields: false
+      remove: []
+    description: "Pull out all Key=Values "
+    groupId: nBKZYu
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: Extract Sourcetypes from the type field
+    groupId: nBKZYu
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: sourcetype
+          value: "'fgt_'.concat(type)"
+      remove:
+        - type*
+    description: Change type to sourcetype
+    groupId: nBKZYu
+  - id: drop
+    filter: "!sourcetype.match('fgt_utm') && !sourcetype.match('fgt_traffic') &&
+      !sourcetype.match('fgt_dns')"
+    disabled: true
+    conf: {}
+    description: "Example, Remove any Sourcetype  that are not needed.  In this Drop event
+      I show how to remove any sourcetype that is NOT traffic, dns, or utm "
+    groupId: nBKZYu
+    final: true
+  - id: numerify
+    filter: "true"
+    disabled: false
+    conf:
+      format: none
+      ignoreFields:
+        - "*id*"
+        - dstport
+        - proto
+        - srcport
+      digits: 0
+    groupId: nBKZYu
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |-
+        Enrich fgt_traffic events - 
+        we Can Enrich the Protocol and Action with Lookups
+    groupId: xhStW0
+  - id: eval
+    filter: sourcetype.match('fgt_traffic')
+    disabled: true
+    conf:
+      add:
+        - name: bytes_in
+          value: rcvdbyte
+        - name: bytes_out
+          value: sentbyte
+        - name: dest
+          value: dstip
+        - name: dest_interface
+          value: dstintf
+        - name: dest_ip
+          value: dstip
+        - name: dest_port
+          value: dstport
+        - name: dest_translated_ip
+          value: tranip
+        - name: dest_translated_port
+          value: tranport
+        - name: dest_mac
+          value: dstmac
+        - name: dvc
+          value: devname
+        - name: packets_in
+          value: rcvdpkt
+        - name: packets_out
+          value: sentpkt
+        - name: rule
+          value: poluuid
+        - name: rule_id
+          value: policyid
+        - name: session_id
+          value: sessionid
+        - name: src
+          value: srcip
+        - name: src_interface
+          value: srcintf
+        - name: src_ip
+          value: srcip
+        - name: src_mac
+          value: srcmac
+        - name: src_port
+          value: srcport
+        - name: src_translated_ip
+          value: transip
+        - name: src_translated_port
+          value: srcport
+        - name: ssid
+          value: srcssid
+        - name: vendor_eventtype
+          value: eventtype
+        - name: vendor_transport
+          value: transport
+        - name: vendor_action
+          value: action
+        - name: vendor_status
+          value: status
+    groupId: xhStW0
+    description: Rename fields
+  - id: lookup
+    filter: sourcetype.match('fgt_traffic')
+    disabled: true
+    conf:
+      matchMode: exact
+      reloadPeriodSec: 60
+      addToEvent: false
+      inFields:
+        - eventField: ftnt_action
+          lookupField: ftnt_action
+      ignoreCase: false
+      matchType: first
+      file: ftnt_action_info.csv
+      outFields:
+        - eventField: action
+          lookupField: action
+    groupId: xhStW0
+    description: Enrich Action
+  - id: lookup
+    filter: sourcetype.match('fgt_traffic')
+    disabled: false
+    conf:
+      matchMode: exact
+      reloadPeriodSec: 60
+      addToEvent: false
+      inFields:
+        - eventField: proto
+          lookupField: proto
+      ignoreCase: false
+      matchType: first
+      file: ftnt_protocol_info.csv
+      outFields:
+        - eventField: transport
+          lookupField: transport
+    groupId: xhStW0
+    description: Enrich Proto
+  - id: eval
+    filter: sourcetype.match('fgt_traffic')
+    disabled: true
+    conf:
+      add:
+        - name: app
+          value: (app || service || transport || "unknown")
+        - name: bytes
+          value: (rcvdbyte+sentbyte)
+        - name: devname
+          value: (devname || devid || "unknown")
+        - name: ftnt_action
+          value: (utmaction || vendor_action || vendor_status)
+        - name: packets
+          value: (rcvdpkt+sentpkt)
+        - name: product
+          value: '"Firewall"'
+        - name: product_version
+          value: (logver || "50")
+        - name: user
+          value: (user || unauthuser || "unknown")
+        - name: vendor
+          value: '"Fortinet"'
+    groupId: xhStW0
+    description: Add Values to fields
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |-
+        Drop fgt_traffic events - 
+        For example, Where dstcountry and srccountry are both “Reserved”
+    groupId: xhStW0
+  - id: drop
+    filter: sourcetype.match('fgt_traffic') && (dstcountry.match('Reserved') &&
+      srccountry.match('Reserved'))
+    disabled: true
+    conf: {}
+    groupId: xhStW0
+    description: Drop if Destination Country and Source are ' Reserved'
+    final: false
+  - id: drop
+    filter: sourcetype.match('fgt_traffic') && (dest_ip.startsWith('fe80:') ||
+      dest_ip.startsWith('fc00:'))
+    disabled: true
+    conf: {}
+    description: Drop if Destination Country and Source are ' Reserved'
+    final: false
+    groupId: xhStW0
+  - id: sampling
+    filter: sourcetype.match('fgt_traffic')
+    disabled: false
+    conf:
+      rules:
+        - filter: srccountry.match('Reserved')
+          rate: 2
+    groupId: xhStW0
+    description: Sample Source Country Example
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Serialize and convert to JSON
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_*"
+        - "!cribl_breaker"
+        - "!index"
+        - "!host"
+        - "!source"
+        - "!sourcetype"
+        - "*"
+    description: Convert to JSON, and push the fields back into _raw
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      remove:
+        - cribl*
+        - "*"
+      keep:
+        - _*
+        - index
+        - host
+        - source
+        - sourcetype
+    description: cleanup

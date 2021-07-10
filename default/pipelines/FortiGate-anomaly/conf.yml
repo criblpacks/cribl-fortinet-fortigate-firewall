@@ -1,0 +1,253 @@
+output: default
+groups:
+  nBKZYu:
+    name: Initial Functions for all FortiGate Events
+    description: Set index, remove syslog header, set auto timestamp, Extract Sourcetype
+    index: 2
+    disabled: false
+  HZxg6l:
+    name: Anomaly Events
+    index: 3
+    description: Intrusion attempts
+    disabled: true
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline Parse Fortinet FortiGate Firewall events
+
+        Author:       Raanan Dagan - rdagan@cribl.io
+
+        Date:         2021-05-15
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "FortiGate Log types details can be found here:
+        https://docs.fortinet.com/document/fortigate/7.0.0/fortios-log-message-\
+        reference/160372/list-of-log-types-and-subtypes "
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: index
+          value: index || 'fortigate_logs'
+    description: Set index, if not already set
+    groupId: nBKZYu
+  - id: auto_timestamp
+    filter: "true"
+    disabled: false
+    conf:
+      srcField: _raw
+      dstField: _time
+      defaultTimezone: local
+      timeExpression: time.getTime() / 1000
+      offset: 0
+      maxLen: 32
+      defaultTime: now
+      latestDateAllowed: +1week
+      earliestDateAllowed: -420weeks
+      timestamps:
+        - regex: /^(?:[^,]*,){6}([^,]+)/
+          strptime: "%Y/%m/%d %H:%M:%S"
+    description: Set _time to the generated_time field. Adjust your default timezone as
+      required.
+    groupId: nBKZYu
+  - id: serde
+    filter: "true"
+    disabled: false
+    conf:
+      mode: extract
+      type: kvp
+      srcField: _raw
+      cleanFields: false
+      remove: []
+    description: "Pull out all Key=Values "
+    groupId: nBKZYu
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: Extract Sourcetypes from the type field
+    groupId: nBKZYu
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: sourcetype
+          value: "'fgt_'.concat(type)"
+      remove:
+        - type*
+    description: Change type to sourcetype
+    groupId: nBKZYu
+  - id: drop
+    filter: "!sourcetype.match('fgt_utm') && !sourcetype.match('fgt_traffic') &&
+      !sourcetype.match('fgt_dns')"
+    disabled: true
+    conf: {}
+    description: "Example, Remove any Sourcetype  that are not needed.  In this Drop event
+      I show how to remove any sourcetype that is NOT traffic, dns, or utm "
+    groupId: nBKZYu
+    final: true
+  - id: numerify
+    filter: "true"
+    disabled: false
+    conf:
+      format: none
+      ignoreFields:
+        - "*id*"
+        - dstport
+        - proto
+        - srcport
+      digits: .nan
+    groupId: nBKZYu
+  - id: comment
+    filter: "true"
+    disabled: true
+    conf:
+      comment: |-
+        Enrich fgt_anomaly events - 
+        we Can Enrich the Action with Lookups
+    groupId: HZxg6l
+  - id: eval
+    filter: sourcetype == 'fgt_anomaly'
+    disabled: true
+    conf:
+      add:
+        - name: bytes_in
+          value: rcvdbyte
+        - name: bytes_out
+          value: sentbyte
+        - name: dest
+          value: dstip
+        - name: dest_interface
+          value: dstintf
+        - name: dest_port
+          value: dstport
+        - name: dst_mac
+          value: dstmac
+        - name: dvc
+          value: devname
+        - name: file_hash
+          value: analyticscksum
+        - name: file_name
+          value: filename
+        - name: file_path
+          value: vendor_url
+        - name: http_method
+          value: reqtype
+        - name: http_referrer
+          value: referralurl
+        - name: status
+          value: vendor_action
+        - name: session_id
+          value: sessionid
+        - name: site
+          value: hostname
+        - name: src_interface
+          value: srcintf
+        - name: src
+          value: srcip
+        - name: src_mac
+          value: srcmac
+        - name: src_port
+          value: srcport
+        - name: vendor_eventtype
+          value: eventtype
+        - name: vendor_url
+          value: url
+        - name: vendor_action
+          value: action
+        - name: vendor_status
+          value: status
+    groupId: HZxg6l
+  - id: eval
+    filter: sourcetype == 'fgt_anomaly'
+    disabled: true
+    conf:
+      add:
+        - name: bytes
+          value: (rcvdbyte+sentbyte)
+        - name: category
+          value: (attack || attackname || virus || catdesc || dtype)
+        - name: devname
+          value: (devname || devid || "unknown")
+        - name: ftnt_action
+          value: (vendor_action || vendor_status)
+        - name: http_user_agent
+          value: (agent || "unknown")
+        - name: ids_type
+          value: '"network"'
+        - name: product
+          value: '"Firewall"'
+        - name: product_version
+          value: (logver || "50")
+        - name: severity
+          value: (severity || crlevel || apprisk || "informational")
+        - name: signature
+          value: (attack || attackname || virus)
+        - name: url
+          value: (hostname+vendor_url || vendor_url)
+        - name: user
+          value: (user || "unknown")
+        - name: vendor
+          value: '"Fortinet"'
+    groupId: HZxg6l
+  - id: lookup
+    filter: sourcetype == 'fgt_anomaly'
+    disabled: true
+    conf:
+      matchMode: exact
+      reloadPeriodSec: 60
+      addToEvent: false
+      inFields:
+        - eventField: ftnt_action
+          lookupField: ftnt_action
+      ignoreCase: false
+      matchType: first
+      file: ftnt_action_info.csv
+      outFields:
+        - eventField: action
+          lookupField: action
+    groupId: HZxg6l
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Serialize and convert to JSON
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_*"
+        - "!cribl_breaker"
+        - "!index"
+        - "!host"
+        - "!source"
+        - "!sourcetype"
+        - "*"
+    description: Convert to JSON, and push the fields back into _raw
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      remove:
+        - cribl*
+        - "*"
+      keep:
+        - _*
+        - index
+        - host
+        - source
+        - sourcetype
+    description: cleanup
